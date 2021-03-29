@@ -20,9 +20,14 @@ setwd('')
 # origin mapping - county level based on data at destination
 
 
-# read in data
+### read in data
+
+# IOM Baseline Assessment Round 9 data - two spreadsheets (https://displacement.iom.int)
 dtm <- read.csv('input/DTM/20213101 IOM SSD DTM MT R9_Baseline Area Dataset_September 2020_bl_sheet.csv',header=T)
 dtmlocs <- read.csv('input/DTM/20210122 IOM DTM SSD MT R9 Baseline Locations for initial data release_0_bl_sheet.csv',header=T)
+# building counts data based on Maxar/Ecopia Digitize Africa Project. Data accessed on 1st Dec 2020
+# data corresponds with building metrics data v2.0 for SSD and v1.1 for COG, UGA, KEN, ETH, SDN, CAF 
+# which is available here: https://wopr.worldpop.org/?/Buildings
 bc <- raster('input/bf_SSD_region/SSDplus_buildings_count.tif')
 
 # clusters of settled cells
@@ -164,10 +169,6 @@ buffptsr <- fasterize(buffpts, settclumps)
 gc()
 settclumps_sub <- mask(settclumps, buffptsr)   # the 'source' in settclumps_sub needs to be 'memory' for the next line to work (if source is a temp folder the stars fn doesn't work)
 settclumps_sub_polys <- st_as_stars(settclumps_sub) %>% st_as_sf(merge = TRUE)
-# an alternative:
-# settclumps_sub_polys <- rasterToPolygons(settclumps_sub, dissolve=TRUE)
-# settclumps_sub_polys <- st_as_sf(settclumps_sub_polys)
-# st_write(settclumps_sub_polys,'input/bf_SSD_region/settlement_clumps.shp')
 
 clustids <- st_intersects(dscellpts[dslocs_big$rowids,], settclumps_sub_polys)
 ds_polys <- settclumps_sub_polys[as.numeric(clustids),]
@@ -184,7 +185,7 @@ ds_polys <- ds_polys[,2:ncol(ds_polys)]
 rm(buff_dist,max_buff_dist,pts_t,buffpts_t,buffpts,buffptsr,settclumps_sub,settclumps_sub_polys,clustids)
 
 # approx IDPs per cell
-ds_polys$Estimated...of.IDP.individuals...total./(ds_polys$polyarea/10000) # max 500 per cell seems reasonable
+ds_polys$Estimated...of.IDP.individuals...total./(ds_polys$polyarea/10000) # max 500 per cell seems reasonable given this
 
 # now the rest of the disp sites - cells don't need to be contig, iterate through increasing buffer size to get suitable number of cells per ds
 dslocs_small <- dslocs[dslocs$Estimated...of.IDP.individuals...total.<=cut_off_pop,]
@@ -364,11 +365,9 @@ for(buff_dist in buffer_dists){
                                                             "Estimated...of.IDP.individuals...total.",
                                                             "Source_Round","rowids")]
     hc_polys_x <- merge(hc_polys2,hclocs_dt2, by.x='rowid_hctab' , by.y='rowids')
-    names(hc_polys_x)[names(hc_polys_x)=="rowid_hctab"] <- "rowids"  # or do merge other way round
+    names(hc_polys_x)[names(hc_polys_x)=="rowid_hctab"] <- "rowids"  
     hc_polys_master <- rbind(hc_polys_master, hc_polys_x)
-    #hc_polys_x_r <- fasterize(hc_polys_x,settclumps)
-    #settclumps <- mask(settclumps, hc_polys_x_r,inverse=TRUE)
-    rm(hc_polys_x,hclocs_dt2) #,hc_polys_x_r
+    rm(hc_polys_x,hclocs_dt2) 
   }
   rm(accept_rowids,ppc_dt,hc_polys2)
   print(length(rowids_track))
@@ -475,7 +474,7 @@ for(i in seq(first_col,ncol(dtmsub),3)){
 }
 origin.county.data <- as.data.table(origin.county.data)
 origin.county.data <- origin.county.data[origin.county.data$count > 0,]
-origin.county.data[is.na(origin.county.data$ori.cnty),] # in addition to the IDPs taht were displaced in an unknown period, there are others with known period but unknown origin
+origin.county.data[is.na(origin.county.data$ori.cnty),] # in addition to the IDPs that were displaced in an unknown period, there are others with known period but unknown origin
 unknowns <- unknowns + sum(origin.county.data$count[is.na(origin.county.data$ori.cnty)])  # add these to the unknown count
 origin.county.data <- origin.county.data[!is.na(origin.county.data$ori.cnty),] # then exclude these unknowns from main table
 # spread unknowns across origin-destination combos according to proportion of total counts
