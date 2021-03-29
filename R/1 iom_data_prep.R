@@ -17,7 +17,8 @@ setwd('')
 # destination mapping
     # displaced sites - shp then raster
     # host community sites - raster than shp
-# origin mapping - county level based on data at destination
+# origin mapping of IDPs - county level based on data at destination
+# county level comparisons - using NBS census projections along with IOM 'not yet returned' data to estimate refugee numbers by county of origin 
 
 
 ### read in data
@@ -408,30 +409,6 @@ par(mfrow=c(1,2))
 hist(dsr[],main='',xlab='IDPs per cell for displacement sites')
 hist(hc_raster_master[],breaks=100,main='',xlab='IDPs per cell for host communities')
 
-# poly of all idps
-
-hc_clumps <- clump(hc_raster_master, direction=8)
-hc_merged <- rasterToPolygons(hc_clumps, dissolve=TRUE)
-hc_merged_sf <- st_as_sf(hc_merged)
-
-hcdt <- data.table(clumpid = hc_clumps[], idp_count = hc_raster_master[])
-hcdt <- na.omit(hcdt)
-hc_sums <- hcdt[,sum(idp_count),clumpid]
-
-# merge pop counts per clump
-hc_merged_sf <- merge(hc_merged_sf,hc_sums,by.x='clumps',by.y='clumpid')
-names(hc_merged_sf)[2] <- 'IDP_count' 
-hc_merged_sf$type <- 'Host community'
-
-# rbind ds and hc polys
-ds_polys <- st_read('output/polys/displacement_sites.shp')
-ds_polys2 <- ds_polys[,c('lctn_ty','est_dp_n')]
-names(ds_polys2)[1:2] <- c('type','IDP_count')
-master_idp_count_poly <- rbind(ds_polys2,hc_merged_sf[,c('type','IDP_count')])
-
-#st_write(master_idp_count_poly, 'output/polys/master_idp_count_poly.shp')
-
-
 
 
 ### origin mapping 
@@ -513,16 +490,118 @@ origin.county.counts <- origin.county.data[,.(count.sum = sum(count)),ori.cnty]
 #write.csv(origin.county.counts,'output/tables/total_idps_displaced_from_county.csv',row.names = F)
 
 
-# IDPs by driver
 
-sub <- dtm_dt[,c(63:66,68:71,73:76,78:81,83:86,88:91)]
-sum(dtm_dt[,11])
-sub <- colSums(sub)
-sub <- rbind(sub[1:4],sub[5:8],sub[9:12],sub[13:16],sub[17:20],sub[21:24])
-sub <- colSums(sub, na.rm = T)
-names(sub) <-  c('conflict','communal.clashes','disaster','unknown.reason')
+### county level comparisons 
 
+# SSD OCHA admin level 1 boundaries
+# https://data.humdata.org/dataset/south-sudan-administrative-boundaries
+ocha <- st_read('input/OCHA_boundaries/ssd_admbnda_adm1_imwg_nbs_20180817.shp')
+ocha$id <- 1:10
 
+# NBS 2020 census pop projections 
+# downloaded from: https://ssnbs.org/home/document/census/population-projections-for-south-sudan-by-county-from-2015-to-2020
+county_pop <- as.data.table(read.csv('input/NBS_pop_proj/nbs_county_2020.csv',header=T))
+# Akoka county in Upper Nile State doesn't appear in OCHA boundaries nor IOM data
+# google maps gives the point loc for Akoka at coord 32.72, 9.89 decimal degrees
+# this falls inside the OCHA county boundary of Baliet (but is close to Malut)
+# add Akoka pop to Baliet:
+county_pop$pop[county_pop$County=='Baliet'] <- county_pop$pop[county_pop$County == 'Baliet'] + county_pop$pop[county_pop$County == 'Akoka']
+county_pop <- county_pop[!County == 'Akoka',]
+
+# refugee origin states - based on UNHCR survey https://microdata.unhcr.org/index.php/catalog/224
+ocha$ADM1_EN
+state_perc <- c(0.14,0.17,0.14,0.04,0.04,0.06,0.17,0.01,0.03,0.21) # alphabetical order
+state_perc <- state_perc/sum(state_perc)
+refugees <- 2185117
+state_origin_refugees <- refugees * state_perc 
+state_origin_refugees <- data.table(state=ocha$ADM1_EN,refugees=state_origin_refugees)
+# read in not yet returned IOM numbers for counties with refugees abroad
+nyr_county <- as.data.table(read.csv('output/tables/counties_reported_refugees_nyrcounts.csv',header=T))
+# check states are spelled the same in the different datasets
+unique(nyr_county$X0.state.name) %in% ocha$ADM1_EN
+
+# compare distribution of 'nyr' by state with refugees by states
+comp_nyr_ref <- nyr_county[,sum(nyr),X0.state.name]
+names(comp_nyr_ref)[names(comp_nyr_ref)=='V1'] <- 'sum_nyr'
+plot(comp_nyr_ref$sum_nyr[order(comp_nyr_ref$X0.state.name)],state_origin_refugees$refugees,pch=16)
+abline(0,1,col='red')
+
+# estimate number of refugees for the counties specifying refugees outside SSD
+nyr_county$ref_est_even <- nyr_county$ref_est <- NA
+for(i in unique(nyr_county$X0.state.name)){
+  rowids <- which(nyr_county$X0.state.name == i)
+  nyr_county$ref_est[rowids] <- (nyr_county$nyr[rowids]/sum(nyr_county$nyr[rowids])) * state_origin_refugees$refugees[state_origin_refugees$state==i]
+}
+
+# inter county idps
+origin.diff.county.data <- as.data.table(read.csv('output/tables/inter_county_displacement.csv'),header=T)
+origin.diff.county.counts <- origin.diff.county.data[,.(count.sum = sum(count)),ori.cnty]
+origin.diff.county.idps <- origin.diff.county.data[,.(idps.sum = sum(count)),X0.county.name]
+
+# merge tables for inter-county displacement and international displacement
+county_level <- data.table(county=unique(c(origin.diff.county.idps$X0.county.name, origin.diff.county.counts$ori.cnty,nyr_county$X0.county.name)))
+county_level <- merge(county_level, origin.diff.county.counts, by.x='county',by.y='ori.cnty',all=TRUE)
+county_level <- merge(county_level, origin.diff.county.idps, by.x='county',by.y='X0.county.name',all=TRUE)
+county_level <- merge(county_level, nyr_county[,c(1,4)], by.x='county',by.y='X0.county.name',all=TRUE)
+names(county_level) <- c('county','interc_dispfrom_count','interc_idps_count','ref_dispfrom_est')   #,'ref_dispfrom_est_even'
+
+county_level$interc_dispfrom_count[is.na(county_level$interc_dispfrom_count)] <- 0
+county_level$interc_idps_count[is.na(county_level$interc_idps_count)] <- 0
+county_level$ref_dispfrom_est[is.na(county_level$ref_dispfrom_est)] <- 0
+
+# match up county names between NBS and IOM datasets
+mismatches <- county_level$county[!county_level$county %in% county_pop$County]
+# check against list
+sort(county_pop$County)
+county_level$county[county_level$county=='Abyei Administrative Area'] <- 'Abyei'
+county_level$county[county_level$county=='Canal Pigi'] <- 'Canal'
+county_level$county[county_level$county=='Lafon'] <- 'Lafon/Lopa'
+county_level$county[county_level$county=='Luakpiny (Nasir)'] <- 'Luakpiny/Nasir'
+county_level$county[county_level$county=='Mayiendit'] <- 'Mayendit'
+county_level$county[county_level$county=='Pariang (Ruweng)'] <- 'Pariang'
+county_level$county[county_level$county=='Raja'] <- 'Raga'
+rm(mismatches)
+
+# merge NBS pop and displacement table
+county_level <- merge(county_level, county_pop, by.x='county',by.y='County',all=TRUE)
+
+# does displaced from exceed pop proj est in any counties?
+county_level[(pop - interc_dispfrom_count - ref_dispfrom_est) < 0] # 3
+
+# calc percentage of initial pop and match the 3 negative pops to lowest perc by replacing the number of refugees
+county_level$perc_not_disp <- (county_level$pop - county_level$interc_dispfrom_count - county_level$ref_dispfrom_est)/county_level$pop
+hist(county_level$perc_not_disp,breaks=15)
+
+min_perc <- 0.1
+neg_counties <- county_level$county[county_level$perc_not_disp<0.1]
+county_level$ref_dispfrom_est[county_level$county %in% neg_counties] <- county_level$pop[county_level$county %in% neg_counties] - county_level$interc_dispfrom_count[county_level$county %in% neg_counties] - (county_level$pop[county_level$county %in% neg_counties] * min_perc)
+# update following field with new perc
+county_level$perc_not_disp <- (county_level$pop - county_level$interc_dispfrom_count - county_level$ref_dispfrom_est)/county_level$pop
+
+# SSD OCHA admin level 2 boundaries
+# https://data.humdata.org/dataset/south-sudan-administrative-boundaries
+ocha2 <- st_read('input/OCHA_boundaries/ssd_admbnda_adm2_imwg_nbs_20180817.shp')
+ocha2$id <- 1:nrow(ocha2)
+# building footprint counts by county
+ochar <- fasterize(ocha2, bc, field = 'id')
+bc_ocha <- zonal(bc, ochar, 'sum')
+
+# match up county names between OCHA and NBS/IOM harmonised
+mismatches <- ocha2$ADM2_EN[!ocha2$ADM2_EN %in% county_level$county]
+sort(county_level$county)
+ocha2$ADM2_EN[ocha2$ADM2_EN=='Kajo-keji'] <- 'Kajo-Keji'
+ocha2$ADM2_EN[ocha2$ADM2_EN=='Lafon'] <- 'Lafon/Lopa'
+ocha2$ADM2_EN[ocha2$ADM2_EN=='Canal/Pigi'] <- 'Canal'
+ocha2$ADM2_EN[ocha2$ADM2_EN=='Panyijiar'] <- 'Panyijar'
+ocha2$ADM2_EN[ocha2$ADM2_EN=='Raja'] <- 'Raga'
+ocha2$ADM2_EN[ocha2$ADM2_EN=='Abyei Region'] <- 'Abyei'
+
+ochadt <- as.data.table(ocha2[,c('ADM2_EN','id')])[,1:2]
+bc_ocha <- merge(as.data.table(bc_ocha),ochadt,by.x='zone',by.y='id',all=T)
+comp_tab <- merge(county_level,bc_ocha,by.x='county',by.y='ADM2_EN',all=T)
+names(comp_tab)[8:9] <- c('id','bc')
+
+#write.csv(comp_tab, 'output/tables/county_level_pop_results.csv',row.names=FALSE)
 
 
 
