@@ -24,15 +24,16 @@ dt_sub <- na.omit(dt)
 nrow(dt_sub)
 colSums(dt_sub)
 
-# check any displacement that exceeds base pop
+# check any displacement that exceeds baseline census projection pop
 dt$pop <- dt$unadj - dt$df 
 dt_sub <- na.omit(dt)
 nrow(dt_sub)
-length(dt_sub$pop[dt_sub$pop<0]) # 12638 pixels 
+length(dt_sub$pop[dt_sub$pop<0]) # 12,638 grid cells 
 length(dt_sub$pop[dt_sub$pop<(-10)])
 sum(dt_sub$pop[dt_sub$pop<0]) # 36,692 people 
 hist(dt_sub$pop[dt_sub$pop<0],breaks=100)
 
+# it is expected that there will be a small proportion of grid cells with higher predicted displaced from than predicted base pop
 # edit displaced from layer so that final pop is not < 0 
 dt$df[dt$pop<0 & !is.na(dt$pop)] <- dt$df[dt$pop<0 & !is.na(dt$pop)] + dt$pop[dt$pop<0 & !is.na(dt$pop)]
 df[] <- dt$df 
@@ -41,7 +42,7 @@ df[] <- dt$df
 # re-do pop based on edited df layer
 dt$pop <- dt$unadj - dt$df + dt$idp
 
-sum(na.omit(dt$pop)) #11144563
+sum(na.omit(dt$pop)) #11144563 = national total pop count
 
 pop <- idp
 pop[] <- NA
