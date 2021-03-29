@@ -11,9 +11,13 @@ library(fasterize)
 
 setwd('')
 
-# read in ACLED data & SSD mastergrid based on OCHA boundaries
+# Armed Conflict Location Events Data ACLED downloaded from here (for recorded events up to 30th Sept 2020):
+# https://www.acleddata.com/data/
 acled <- read.csv("input/acled/2012-01-01-2020-09-30-South_Sudan.csv",header=T)
-mgrid <- raster('input/bf_SSD_region/SSDplus_buildings_count.tif')
+
+# raster mastergrid used for this study based on OCHA boundaries can be downloaded here:
+# https://wopr.worldpop.org/?SSD/Population/v2.0
+mgrid <- raster('input/bf_SSD_region/SSD_population_v2_0_mastergrid.tif')
 
 years <- list(c('2020'),c('2019'),c('2018'),c('2017'),c('2016'),c('2015'),c('2014'))
 

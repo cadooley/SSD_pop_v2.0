@@ -12,10 +12,10 @@ library(fasterize)
 
 setwd('')
 
-# NBS county totals & IOM displaced from by county 
+# IOM displaced from counts by county (generated in script 1)
 origin_county_counts <- as.data.table(read.csv('output/tables/total_idps_displaced_from_county.csv',header=T))
 
-# refugees by county based on pop comparisons assessment 
+# refugees by county based on pop comparisons assessment (generated in script 1)
 comp_tab <- as.data.table(read.csv('output/tables/county_level_pop_results.csv',header=T))
 
 # match up county names 
@@ -35,9 +35,16 @@ mdt <- merge(comp_tab[,c('county','ref_dispfrom_est','pop')],origin_county_count
 mdt$tot_disp_from <- mdt$ref_dispfrom_est + mdt$count.sum
 mdt <- mdt[,c('county','pop','tot_disp_from')]
 
-# create county raster
+# SSD OCHA admin level 2 boundaries
+# https://data.humdata.org/dataset/south-sudan-administrative-boundaries
 ocha2 <- st_read('input/OCHA_boundaries/ssd_admbnda_adm2_imwg_nbs_20180817.shp')
+
+# total building area data based on Maxar/Ecopia Digitize Africa Project. Data accessed on 1st Dec 2020
+# data corresponds with building metrics data v2.0 for SSD and v1.1 for COG, UGA, KEN, ETH, SDN, CAF 
+# which is available here: https://wopr.worldpop.org/?/Buildings
 bta <- raster('input/RF_covs/SSDplus_buildings_total_area.tif')
+
+# create county raster
 ocha2$id <- 1:nrow(ocha2)
 ochar <- fasterize(ocha2, bta, field = 'id')
 ochar <- mask(ochar, bta)
@@ -59,7 +66,7 @@ county_order <- data.table(ocha2[,c('ADM2_EN','id')]); county_order <- county_or
 px_area <- area(ochar)
 px_area <- px_area * 10 * 10
 
-# total area of settled pixels and buildings per county
+# total area of settled pixels and buildings per county (total building area per county wasn't actually used in the final analysis)
 county_px_area <- data.table(zonal(px_area, ochar, fun="sum", na.rm=T))
 names(county_px_area) <- c("id","px_area")
 county_px_area <- merge(county_px_area,county_order,by='id')
@@ -88,10 +95,10 @@ mdt$log_dpfph <- log(mdt$dpfph)
 mdt$log_ppba <- log(mdt$ppba)
 mdt$log_dpfpba <- log(mdt$dpfpba)
 
+# zonal covariates
 ochadt <- data.table(ochar[])
 names(ochadt) <- 'zone'
 zonal_covs <- data.table(zone=1:79)
-# zonal covariates
 lf <- list.files('input/RF_covs/',pattern="tif$",full.names=TRUE) 
 for(i in 1:length(lf)){
   rdt <- cbind(ochadt, data.table(raster(lf[i])[]))
@@ -121,16 +128,10 @@ plot(ocha2[,20],main='unadjusted population counts (census projection)')
 plot(ocha2[,21],main='estimated number of people displaced from each county')
 plot(ocha2[,18],main='log unadjusted population density (census projection)')
 plot(ocha2[,19],main='log estimated density of people displaced from each county')
-#plot(ocha2[,c(20:21,18:19)])
 
 ### disagg of unadjusted pop ###
 
 mdf <- as.data.frame(mdt)
-
-# par(mfrow=c(4,4))
-# for(i in c(15:37)){
-#   hist(mdf[,i],breaks = 15,main=names(mdf)[i])
-# }
 
 # subset model data
 x.data <- mdf[,c(15,44:78)]

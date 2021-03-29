@@ -7,10 +7,11 @@ setwd('')
 
 # mask out displacement sites of all covariate layers ready for RF disaggregation
 
+# user will need to edit the following directories to point to where covariates from scripts 2 & 3 have been saved
 lf <- list.files('input/wpg_covs/SSDplus_region_masked/',pattern="tif$",full.names=TRUE) 
 lf2 <- list.files('input/bf_SSD_region/',pattern=c('buildings','tif$'),full.names=TRUE) 
 lf3 <- list.files('input/acled/covs/',pattern='tif$',full.names=TRUE)  
-lf4 <- list.files('input/worldclim/masked_prec/',pattern='wc2.1_30s',full.names=TRUE) #^prec
+lf4 <- list.files('input/worldclim/masked_prec/',pattern='wc2.1_30s',full.names=TRUE) 
 lf5 <- list.files('input/hydrosheds/masked_hydrosheds/',pattern='tif$',full.names=TRUE) 
 
 lf_full <- c(lf,lf2,lf3,lf4,lf5)
